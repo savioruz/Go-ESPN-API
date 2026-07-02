@@ -64,8 +64,9 @@ generate: ## Generate code
 	@if [ ! -f permissions/permissions.json ]; then \
 		echo '{"skip": true, "endpoints": []}' > permissions/permissions.json; \
 	fi
-	@echo "Upgrading to OpenAPI 3.1..."
-	@bunx @scalar/cli document upgrade docs/swagger.json --output docs/openapi.json
+	@echo "Upgrading to OpenAPI 3.1 (optional; @scalar/cli needs Node >=24)..."
+	@npx @scalar/cli document upgrade docs/swagger.json --output docs/openapi.json \
+		|| echo "  skipped OpenAPI 3.1 upgrade (@scalar/cli unavailable / Node <24) — docs/openapi.json left unchanged; only the dev /docs UI needs it"
 
 generate.mock: ## Generate mock code
 	go generate -run="mockgen" ./...
