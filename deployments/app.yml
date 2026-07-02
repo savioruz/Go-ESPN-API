@@ -1,0 +1,109 @@
+# Application tier for Go-ESPN-API (the Go rewrite of the Django espn_service +
+# nhl_service). Pairs with deployments/services.yml (postgres + redis + optional
+# jaeger). Deploy with:
+#
+#   docker compose -f deployments/services.yml -f deployments/app.yml up -d
+#
+# Two roles, both from the same image:
+#   app     — HTTP read API (ESPN /api/v1, NHL /api/v1/nhl, POST /api/v1/ingest/*);
+#             runs migrations on boot when DB_POSTGRES_AUTO_MIGRATE=true (default).
+#   worker  — ingestion scheduler (Celery-beat + worker replacement)
+#
+# Services are env-gated: SERVICES_ESPN_ENABLED / SERVICES_NHL_ENABLED toggle the
+# ESPN and NHL routes (app) and scheduled jobs (worker) independently.
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: go-espn-api:latest
+    container_name: espn-app
+    entrypoint: ["/app"]
+    environment:
+      - SERVER_ENV=${SERVER_ENV:-production}
+      - SERVER_LOG_LEVEL=${SERVER_LOG_LEVEL:-info}
+      - SERVER_PORT=${SERVER_PORT:-8080}
+      - SERVER_HOST=${SERVER_HOST:-0.0.0.0}
+      - APP_NAME=${APP_NAME:-espn}
+      - APP_API_KEY=${APP_API_KEY}
+      - APP_CORS_ENABLE=${APP_CORS_ENABLE:-true}
+      - APP_CORS_ALLOWED_ORIGINS=${APP_CORS_ALLOWED_ORIGINS}
+      - APP_RATE_LIMITER_ENABLE=${APP_RATE_LIMITER_ENABLE:-true}
+      - APP_RATE_LIMITER_MAX_REQUESTS=${APP_RATE_LIMITER_MAX_REQUESTS:-100}
+      - APP_RATE_LIMITER_WINDOW_SECONDS=${APP_RATE_LIMITER_WINDOW_SECONDS:-60}
+      - DB_POSTGRES_WRITE_HOST=${DB_POSTGRES_WRITE_HOST:-postgres}
+      - DB_POSTGRES_WRITE_PORT=${DB_POSTGRES_WRITE_PORT:-5432}
+      - DB_POSTGRES_WRITE_USER=${DB_POSTGRES_WRITE_USER:-postgres}
+      - DB_POSTGRES_WRITE_PASSWORD=${DB_POSTGRES_WRITE_PASSWORD}
+      - DB_POSTGRES_WRITE_NAME=${DB_POSTGRES_WRITE_NAME:-espn}
+      - DB_POSTGRES_WRITE_TIMEZONE=${DB_POSTGRES_WRITE_TIMEZONE:-UTC}
+      - DB_POSTGRES_WRITE_SSL_MODE=${DB_POSTGRES_WRITE_SSL_MODE:-disable}
+      - DB_POSTGRES_READ_HOST=${DB_POSTGRES_READ_HOST:-postgres}
+      - DB_POSTGRES_READ_PORT=${DB_POSTGRES_READ_PORT:-5432}
+      - DB_POSTGRES_READ_USER=${DB_POSTGRES_READ_USER:-postgres}
+      - DB_POSTGRES_READ_PASSWORD=${DB_POSTGRES_READ_PASSWORD}
+      - DB_POSTGRES_READ_NAME=${DB_POSTGRES_READ_NAME:-espn}
+      - DB_POSTGRES_READ_TIMEZONE=${DB_POSTGRES_READ_TIMEZONE:-UTC}
+      - DB_POSTGRES_READ_SSL_MODE=${DB_POSTGRES_READ_SSL_MODE:-disable}
+      - DB_POSTGRES_MAX_RETRY=${DB_POSTGRES_MAX_RETRY:-3}
+      - DB_POSTGRES_RETRY_WAIT_TIME=${DB_POSTGRES_RETRY_WAIT_TIME:-5}
+      - CACHE_REDIS_PRIMARY_HOST=${CACHE_REDIS_PRIMARY_HOST:-redis}
+      - CACHE_REDIS_PRIMARY_PORT=${CACHE_REDIS_PRIMARY_PORT:-6379}
+      - CACHE_REDIS_PRIMARY_PASSWORD=${CACHE_REDIS_PRIMARY_PASSWORD}
+      - CACHE_TTL=${CACHE_TTL:-120}
+      - SERVICES_ESPN_ENABLED=${SERVICES_ESPN_ENABLED:-true}
+      - SERVICES_NHL_ENABLED=${SERVICES_NHL_ENABLED:-false}
+      - DB_POSTGRES_AUTO_MIGRATE=${DB_POSTGRES_AUTO_MIGRATE:-true}
+      - EXTERNAL_OTEL_ENDPOINT=${EXTERNAL_OTEL_ENDPOINT}
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: go-espn-api:latest
+    container_name: espn-worker
+    entrypoint: ["/worker"]
+    environment:
+      - SERVER_ENV=${SERVER_ENV:-production}
+      - SERVER_LOG_LEVEL=${SERVER_LOG_LEVEL:-info}
+      - APP_NAME=${APP_NAME:-espn}
+      - DB_POSTGRES_WRITE_HOST=${DB_POSTGRES_WRITE_HOST:-postgres}
+      - DB_POSTGRES_WRITE_PORT=${DB_POSTGRES_WRITE_PORT:-5432}
+      - DB_POSTGRES_WRITE_USER=${DB_POSTGRES_WRITE_USER:-postgres}
+      - DB_POSTGRES_WRITE_PASSWORD=${DB_POSTGRES_WRITE_PASSWORD}
+      - DB_POSTGRES_WRITE_NAME=${DB_POSTGRES_WRITE_NAME:-espn}
+      - DB_POSTGRES_WRITE_TIMEZONE=${DB_POSTGRES_WRITE_TIMEZONE:-UTC}
+      - DB_POSTGRES_WRITE_SSL_MODE=${DB_POSTGRES_WRITE_SSL_MODE:-disable}
+      - DB_POSTGRES_READ_HOST=${DB_POSTGRES_READ_HOST:-postgres}
+      - DB_POSTGRES_READ_PORT=${DB_POSTGRES_READ_PORT:-5432}
+      - DB_POSTGRES_READ_USER=${DB_POSTGRES_READ_USER:-postgres}
+      - DB_POSTGRES_READ_PASSWORD=${DB_POSTGRES_READ_PASSWORD}
+      - DB_POSTGRES_READ_NAME=${DB_POSTGRES_READ_NAME:-espn}
+      - DB_POSTGRES_READ_TIMEZONE=${DB_POSTGRES_READ_TIMEZONE:-UTC}
+      - DB_POSTGRES_READ_SSL_MODE=${DB_POSTGRES_READ_SSL_MODE:-disable}
+      - DB_POSTGRES_MAX_RETRY=${DB_POSTGRES_MAX_RETRY:-3}
+      - DB_POSTGRES_RETRY_WAIT_TIME=${DB_POSTGRES_RETRY_WAIT_TIME:-5}
+      # Worker ingest scope + concurrency. Bounded fan-out caps concurrent DB
+      # writes; keep INGEST_CONCURRENCY <= the Postgres pool size.
+      - SERVICES_ESPN_ENABLED=${SERVICES_ESPN_ENABLED:-true}
+      - SERVICES_NHL_ENABLED=${SERVICES_NHL_ENABLED:-false}
+      - SERVICES_ESPN_INGEST_LEAGUES=${SERVICES_ESPN_INGEST_LEAGUES:-soccer:fifa.world,soccer:eng.1,soccer:esp.1,soccer:ger.1,soccer:ita.1,soccer:fra.1,soccer:usa.1,soccer:eng.2,soccer:uefa.champions,soccer:uefa.europa,football:nfl,basketball:nba}
+      - SERVICES_ESPN_INGEST_CONCURRENCY=${SERVICES_ESPN_INGEST_CONCURRENCY:-4}
+      - SERVICES_NHL_INGEST_CONCURRENCY=${SERVICES_NHL_INGEST_CONCURRENCY:-4}
+      - SERVICES_ESPN_RELAYS=${SERVICES_ESPN_RELAYS}
+      - SERVICES_ESPN_TIMEOUT=${SERVICES_ESPN_TIMEOUT:-30}
+      - SERVICES_ESPN_MAXRETRIES=${SERVICES_ESPN_MAXRETRIES:-3}
+      - EXTERNAL_OTEL_ENDPOINT=${EXTERNAL_OTEL_ENDPOINT}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped

@@ -1,0 +1,1 @@
+Refer to `.agents/skills/rules/SKILL.md` for all model and database conventions.

@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS sports (
+    id BIGSERIAL PRIMARY KEY,
+    slug VARCHAR(50) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_sports_slug UNIQUE (slug)
+);

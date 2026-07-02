@@ -1,0 +1,54 @@
+# .golangci.yml
+version: "2"
+
+# Enable linters
+linters:
+  enable:
+    - errcheck
+    - staticcheck
+    - containedctx
+    - revive
+    - err113
+    - errchkjson
+    - errorlint
+    - forbidigo
+    - forcetypeassert
+    - gocritic
+    - interfacebloat
+    - intrange
+    - misspell
+    - mnd
+    - nakedret
+    - nestif
+    - nilnil
+    - nlreturn
+    - nosprintfhostport
+    - perfsprint
+    - prealloc
+    - tagalign
+    - wsl_v5
+
+  exclusions:
+    rules:
+      - path: infras/...
+        linters:
+          - revive
+      - path: transport/...
+        linters:
+          - revive
+      - path: internal/...
+        linters:
+          - revive
+      - path: generate.go
+        linters:
+          - revive
+      - path: cmd/...
+        linters:
+          - revive
+
+formatters:
+  enable:
+    - gofmt
+
+run:
+  tests: false

@@ -1,0 +1,14 @@
+CREATE TABLE IF NOT EXISTS venues (
+    id BIGSERIAL PRIMARY KEY,
+    espn_id VARCHAR(50) NOT NULL,
+    name VARCHAR(200) NOT NULL,
+    city VARCHAR(100) NOT NULL DEFAULT '',
+    state VARCHAR(100) NOT NULL DEFAULT '',
+    country VARCHAR(100) NOT NULL DEFAULT 'USA',
+    is_indoor BOOLEAN NOT NULL DEFAULT TRUE,
+    capacity INTEGER,
+    raw_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_venues_espn_id UNIQUE (espn_id)
+);

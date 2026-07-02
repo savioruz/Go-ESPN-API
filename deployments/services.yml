@@ -1,0 +1,59 @@
+# Backing services for Go-ESPN-API: Postgres + Redis (+ optional Jaeger for
+# OTel traces). Pairs with deployments/app.yml:
+#
+#   docker compose -f deployments/services.yml -f deployments/app.yml up -d
+#
+# Jaeger is optional — only useful when EXTERNAL_OTEL_ENDPOINT=jaeger:4317 is set
+# for the app/worker. Kafka/Unleash/S3 from the upstream boilerplate are not used.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: espn-postgres
+    environment:
+      POSTGRES_USER: ${DB_POSTGRES_WRITE_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_POSTGRES_WRITE_PASSWORD:-password}
+      POSTGRES_DB: ${DB_POSTGRES_WRITE_NAME:-espn}
+    ports:
+      - "${DB_POSTGRES_WRITE_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_POSTGRES_WRITE_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: espn-redis
+    command: redis-server --requirepass ${CACHE_REDIS_PRIMARY_PASSWORD:-strongpassword}
+    ports:
+      - "${CACHE_REDIS_PRIMARY_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "redis-cli -a ${CACHE_REDIS_PRIMARY_PASSWORD:-strongpassword} ping | grep -q PONG",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # Optional trace backend. Set EXTERNAL_OTEL_ENDPOINT=jaeger:4317 on app/worker
+  # to export spans here; UI at :16686.
+  jaeger:
+    image: jaegertracing/all-in-one:2.19.0
+    container_name: espn-jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "${JAEGER_UI_PORT:-16686}:16686" # UI
+      - "${JAEGER_OTLP_PORT:-4317}:4317" # OTLP gRPC
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

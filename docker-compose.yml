@@ -1,0 +1,155 @@
+# Local stack for Go-ESPN-API — the Go rewrite of the Django espn_service +
+# nhl_service. Brings up Postgres, Redis, the HTTP read API (app), the ingestion
+# scheduler (worker), and an optional Jaeger for traces.
+#
+# Quick start:
+#   cp .env.example .env      # then set APP_API_KEY (and enable NHL if wanted)
+#   docker compose up -d postgres redis app worker
+#   curl -H "X-API-Key: $APP_API_KEY" http://localhost:8080/api/v1/sports/
+#
+# Schema: the app runs migrations on boot when DB_POSTGRES_AUTO_MIGRATE=true
+# (default here), so there is no separate migrate service. To run migrations
+# manually instead, set it to false and run `make migrate.up`.
+
+# Shared DB connection env, reused by app and worker.
+x-db-env: &db_env
+  DB_POSTGRES_WRITE_HOST: ${DB_POSTGRES_WRITE_HOST:-postgres}
+  DB_POSTGRES_WRITE_PORT: ${DB_POSTGRES_WRITE_PORT:-5432}
+  DB_POSTGRES_WRITE_USER: ${DB_POSTGRES_WRITE_USER:-postgres}
+  DB_POSTGRES_WRITE_PASSWORD: ${DB_POSTGRES_WRITE_PASSWORD:-password}
+  DB_POSTGRES_WRITE_NAME: ${DB_POSTGRES_WRITE_NAME:-espn}
+  DB_POSTGRES_WRITE_TIMEZONE: ${DB_POSTGRES_WRITE_TIMEZONE:-UTC}
+  DB_POSTGRES_WRITE_SSL_MODE: ${DB_POSTGRES_WRITE_SSL_MODE:-disable}
+  DB_POSTGRES_READ_HOST: ${DB_POSTGRES_READ_HOST:-postgres}
+  DB_POSTGRES_READ_PORT: ${DB_POSTGRES_READ_PORT:-5432}
+  DB_POSTGRES_READ_USER: ${DB_POSTGRES_READ_USER:-postgres}
+  DB_POSTGRES_READ_PASSWORD: ${DB_POSTGRES_READ_PASSWORD:-password}
+  DB_POSTGRES_READ_NAME: ${DB_POSTGRES_READ_NAME:-espn}
+  DB_POSTGRES_READ_TIMEZONE: ${DB_POSTGRES_READ_TIMEZONE:-UTC}
+  DB_POSTGRES_READ_SSL_MODE: ${DB_POSTGRES_READ_SSL_MODE:-disable}
+  DB_POSTGRES_MAX_RETRY: ${DB_POSTGRES_MAX_RETRY:-3}
+  DB_POSTGRES_RETRY_WAIT_TIME: ${DB_POSTGRES_RETRY_WAIT_TIME:-5}
+  DB_POSTGRES_MIGRATION_TABLE: ${DB_POSTGRES_MIGRATION_TABLE:-espn_migrations}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: espn-postgres
+    environment:
+      POSTGRES_USER: ${DB_POSTGRES_WRITE_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_POSTGRES_WRITE_PASSWORD:-password}
+      POSTGRES_DB: ${DB_POSTGRES_WRITE_NAME:-espn}
+    ports:
+      - "${DB_POSTGRES_WRITE_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_POSTGRES_WRITE_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: espn-redis
+    command: redis-server --requirepass ${CACHE_REDIS_PRIMARY_PASSWORD:-strongpassword}
+    ports:
+      - "${CACHE_REDIS_PRIMARY_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "redis-cli -a ${CACHE_REDIS_PRIMARY_PASSWORD:-strongpassword} ping | grep -q PONG",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # HTTP read API (ESPN under /api/v1, NHL under /api/v1/nhl, POST /api/v1/ingest/*).
+  # Runs migrations on boot via DB_POSTGRES_AUTO_MIGRATE=true.
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: go-espn-api:latest
+    container_name: espn-app
+    entrypoint: ["/app"]
+    environment:
+      <<: *db_env
+      DB_POSTGRES_AUTO_MIGRATE: ${DB_POSTGRES_AUTO_MIGRATE:-true}
+      SERVER_ENV: ${SERVER_ENV:-production}
+      SERVER_LOG_LEVEL: ${SERVER_LOG_LEVEL:-info}
+      SERVER_PORT: ${SERVER_PORT:-8080}
+      SERVER_HOST: ${SERVER_HOST:-0.0.0.0}
+      APP_NAME: ${APP_NAME:-espn}
+      APP_API_KEY: ${APP_API_KEY}
+      APP_CORS_ENABLE: ${APP_CORS_ENABLE:-true}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS:-}
+      APP_RATE_LIMITER_ENABLE: ${APP_RATE_LIMITER_ENABLE:-true}
+      APP_RATE_LIMITER_MAX_REQUESTS: ${APP_RATE_LIMITER_MAX_REQUESTS:-100}
+      APP_RATE_LIMITER_WINDOW_SECONDS: ${APP_RATE_LIMITER_WINDOW_SECONDS:-60}
+      CACHE_REDIS_PRIMARY_HOST: ${CACHE_REDIS_PRIMARY_HOST:-redis}
+      CACHE_REDIS_PRIMARY_PORT: ${CACHE_REDIS_PRIMARY_PORT:-6379}
+      CACHE_REDIS_PRIMARY_PASSWORD: ${CACHE_REDIS_PRIMARY_PASSWORD:-strongpassword}
+      CACHE_TTL: ${CACHE_TTL:-120}
+      SERVICES_ESPN_ENABLED: ${SERVICES_ESPN_ENABLED:-true}
+      SERVICES_NHL_ENABLED: ${SERVICES_NHL_ENABLED:-false}
+      SERVICES_ESPN_INGEST_LEAGUES: ${SERVICES_ESPN_INGEST_LEAGUES:-soccer:fifa.world,soccer:eng.1,soccer:esp.1,soccer:ger.1,soccer:ita.1,soccer:fra.1,soccer:usa.1,soccer:eng.2,soccer:uefa.champions,soccer:uefa.europa,football:nfl,basketball:nba}
+      SERVICES_ESPN_INGEST_CONCURRENCY: ${SERVICES_ESPN_INGEST_CONCURRENCY:-4}
+      EXTERNAL_OTEL_ENDPOINT: ${EXTERNAL_OTEL_ENDPOINT:-}
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Ingestion scheduler (Celery-beat + worker replacement). Same image as app,
+  # but runs the worker binary. OTel service name is set to espn_worker in-process.
+  # Relies on the app's auto-migration for the schema (its first scheduled job is
+  # minutes out; for a standalone worker run `make migrate.up` first).
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: go-espn-api:latest
+    container_name: espn-worker
+    entrypoint: ["/worker"]
+    environment:
+      <<: *db_env
+      SERVER_ENV: ${SERVER_ENV:-production}
+      SERVER_LOG_LEVEL: ${SERVER_LOG_LEVEL:-info}
+      APP_NAME: ${APP_NAME:-espn}
+      CACHE_REDIS_PRIMARY_HOST: ${CACHE_REDIS_PRIMARY_HOST:-redis}
+      CACHE_REDIS_PRIMARY_PORT: ${CACHE_REDIS_PRIMARY_PORT:-6379}
+      CACHE_REDIS_PRIMARY_PASSWORD: ${CACHE_REDIS_PRIMARY_PASSWORD:-strongpassword}
+      SERVICES_ESPN_ENABLED: ${SERVICES_ESPN_ENABLED:-true}
+      SERVICES_NHL_ENABLED: ${SERVICES_NHL_ENABLED:-false}
+      SERVICES_ESPN_INGEST_LEAGUES: ${SERVICES_ESPN_INGEST_LEAGUES:-soccer:fifa.world,soccer:eng.1,soccer:esp.1,soccer:ger.1,soccer:ita.1,soccer:fra.1,soccer:usa.1,soccer:eng.2,soccer:uefa.champions,soccer:uefa.europa,football:nfl,basketball:nba}
+      SERVICES_ESPN_INGEST_CONCURRENCY: ${SERVICES_ESPN_INGEST_CONCURRENCY:-4}
+      SERVICES_NHL_INGEST_CONCURRENCY: ${SERVICES_NHL_INGEST_CONCURRENCY:-4}
+      EXTERNAL_OTEL_ENDPOINT: ${EXTERNAL_OTEL_ENDPOINT:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Optional: Jaeger all-in-one for viewing OTel traces. Only useful when
+  # EXTERNAL_OTEL_ENDPOINT=jaeger:4317 is set for app/worker. UI at :16686.
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: espn-jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "${JAEGER_UI_PORT:-16686}:16686" # UI
+      - "${JAEGER_OTLP_PORT:-4317}:4317" # OTLP gRPC
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

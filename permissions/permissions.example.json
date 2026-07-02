@@ -1,0 +1,35 @@
+{
+  "skip": false,
+  "endpoints": [
+    {
+      "path": "/v1/todos",
+      "method": "GET",
+      "permissions": ["user", "admin", "superadmin"],
+      "skip": false
+    },
+    {
+      "path": "/v1/todos/{id}",
+      "method": "GET",
+      "permissions": ["user", "admin", "superadmin"],
+      "skip": false
+    },
+    {
+      "path": "/v1/todos",
+      "method": "POST",
+      "permissions": ["user", "admin", "superadmin"],
+      "skip": false
+    },
+    {
+      "path": "/v1/todos/{id}",
+      "method": "PATCH",
+      "permissions": ["user", "admin", "superadmin"],
+      "skip": false
+    },
+    {
+      "path": "/v1/todos/{id}",
+      "method": "DELETE",
+      "permissions": ["admin", "superadmin"],
+      "skip": false
+    }
+  ]
+}

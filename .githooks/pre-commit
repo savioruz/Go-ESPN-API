@@ -1,0 +1,13 @@
+#!/bin/sh
+
+BLOCKED_PATTERNS="*_gen.go *_wire_gen.go *mock.go mock_*.go docs.go swagger.json swagger.yaml permissions.json kafka_jaas.conf"
+
+for pattern in $BLOCKED_PATTERNS; do
+  if git diff --cached --name-only | grep -q "$pattern"; then
+    echo "cannot commit $pattern - generated files and mocks must not be committed"
+    exit 1
+  fi
+done
+
+make lint && make test
+exit 0

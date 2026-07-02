@@ -1,0 +1,58 @@
+# Ignore IDE stuff
+.vscode/
+.idea/
+
+# Ignore executable files
+.build/
+.builder/
+.env
+kafka_jaas.conf
+
+# Ignore mock files
+**mocks
+**/*mock.go
+**/mock.go
+**/mock_*.go
+
+# Ignore build artifacts
+node_modules/
+dist/
+tmp/
+bin/
+.vercel
+
+# Ignore plans
+plans/
+docs/plans/
+
+# Ignore generated files
+**/*gen.go
+**/wire_gen.go
+docs/docs.go
+docs/swagger.json
+docs/openapi.json
+docs/swagger.yaml
+
+# Ignore permission file
+permissions/permissions.json
+
+# Ignore coverage reports
+*.log
+*.log.*
+*.log-*
+*.log/*
+*.log-/*
+*.log-*/
+
+# Ignore build results
+engine
+
+# Ignore OS files
+.DS_Store
+
+# Ignore worktrees
+.worktrees/
+
+# Ignore plans
+docs/plans/
+Thumbs.db

@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install Scalar CLI
+        run: npm install -g @scalar/cli
+
+      - name: Create tmp directory
+        run: mkdir -p tmp
+
+      - name: Generate code
+        run: make generate
+
+      - name: Generate mocks
+        run: make generate.mock
+
+      - name: Initialize permissions.json
+        run: |
+          cat <<EOF > permissions/permissions.json
+          {
+            "skip": true,
+            "endpoints": []
+          }
+          EOF
+
+      - name: Run linter
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+          args: --timeout=5m
+
+      - name: Run tests
+        env:
+          GO_ENV: test
+        run: make test
+
+      - name: Generate coverage report
+        env:
+          GO_ENV: test
+        run: make coverage
+
+      - name: Check coverage
+        run: make coverage.check
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./tmp/cover.out
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: savioruz/oil
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [ test ]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install Scalar CLI
+        run: npm install -g @scalar/cli
+
+      - name: Generate code
+        run: make generate
+
+      - name: Build binary
+        run: make build
