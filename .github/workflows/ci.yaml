@@ -32,13 +32,10 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: '24'
-
-      - name: Install Scalar CLI
-        run: npm install -g @scalar/cli
+          bun-version: latest
 
       - name: Create tmp directory
         run: mkdir -p tmp
@@ -103,13 +100,10 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: '24'
-
-      - name: Install Scalar CLI
-        run: npm install -g @scalar/cli
+          bun-version: latest
 
       - name: Generate code
         run: make generate
