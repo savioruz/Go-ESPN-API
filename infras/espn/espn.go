@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"go-espn-api/config"
 	"go-espn-api/infras/otel"
@@ -126,9 +127,12 @@ func New(cfg *config.Config, otl otel.Otel) ESPN {
 	}
 
 	return &espnImpl{
-		Config:     cfg,
-		otel:       otl,
-		httpClient: &http.Client{Timeout: timeout},
+		Config: cfg,
+		otel:   otl,
+		httpClient: &http.Client{
+			Timeout:   timeout,
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		},
 		baseURLs:   defaultBaseURLs(),
 		relays:     relays,
 		userAgent:  defaultUserAgent,

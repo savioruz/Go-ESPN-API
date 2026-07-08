@@ -10,6 +10,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	otelapi "go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 const (
@@ -39,7 +41,11 @@ func NewAppMiddleware(otel otel.Otel, config *config.Config, cache cache.RedisCa
 
 func (a *appMiddleware) Tracing(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		ctx := request.Context()
+		// Extract any incoming W3C trace context so this request continues the
+		// caller's distributed trace instead of starting an orphan root trace.
+		ctx := otelapi.GetTextMapPropagator().Extract(
+			request.Context(), propagation.HeaderCarrier(request.Header),
+		)
 
 		rctx := chi.RouteContext(ctx)
 		method := request.Method

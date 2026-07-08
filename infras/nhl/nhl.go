@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"go-espn-api/config"
 	"go-espn-api/infras/otel"
@@ -93,9 +94,14 @@ func New(cfg *config.Config, otl otel.Otel) NHL {
 	}
 
 	return &nhlImpl{
-		Config:      cfg,
-		otel:        otl,
-		httpClient:  &http.Client{Timeout: timeout},
+		Config: cfg,
+		otel:   otl,
+		httpClient: &http.Client{
+			Timeout: timeout,
+			// Auto-instrument outbound calls: emit client spans and inject the
+			// W3C traceparent so downstream NHL requests continue the trace.
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		},
 		webBaseURL:  baseURLWeb,
 		statBaseURL: baseURLStats,
 		maxRetries:  maxRetries,

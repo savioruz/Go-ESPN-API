@@ -10,6 +10,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
@@ -55,6 +56,12 @@ func New(config *config.Config) Otel {
 
 	// Set tracer provider global
 	otel.SetTracerProvider(traceProvider)
+
+	// Register the W3C propagator so incoming traceparent/baggage headers are
+	// honored (continue the caller's trace instead of starting an orphan root).
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{}, propagation.Baggage{},
+	))
 
 	otelInstance := &otelImpl{
 		TracerProvider: traceProvider,
