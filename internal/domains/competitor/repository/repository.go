@@ -53,6 +53,8 @@ func (repo *repositoryImpl) deleteByEvent(ctx context.Context, p dbx.NamedPrepar
 	ctx, scope := repo.otel.NewScope(ctx, constant.OtelRepositoryScopeName, constant.OtelRepositoryScopeName+".competitor.DeleteByEvent")
 	defer scope.End()
 
+	scope.SetAttribute(constant.OtelQueryAttributeKey, competitorDeleteSQL)
+
 	if err := dbx.NamedExecP(ctx, p, competitorDeleteSQL, map[string]any{"event_id": eventID}); err != nil {
 		scope.TraceError(err)
 
@@ -89,6 +91,8 @@ func (repo *repositoryImpl) insert(ctx context.Context, p dbx.NamedPreparer, m m
 		"order":       m.Order,
 		"raw_data":    dbx.JSONOrDefault(m.RawData, "{}"),
 	}
+
+	scope.SetAttribute(constant.OtelQueryAttributeKey, competitorInsertSQL)
 
 	if err := dbx.NamedExecP(ctx, p, competitorInsertSQL, args); err != nil {
 		scope.TraceError(err)

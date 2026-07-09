@@ -124,6 +124,7 @@ func (repo *repositoryImpl) List(ctx context.Context, f ListFilter, page, pageSi
 	args := map[string]any{"limit": pageSize, "offset": (page - 1) * pageSize}
 	order := drf.ResolveOrdering(f.Ordering, athleteStatsOrdering, "a.season_year DESC")
 	query := athleteStatsSelect + athleteStatsConditions(f, args) + " ORDER BY " + order + " LIMIT :limit OFFSET :offset"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	items := []dto.AthleteStatsRow{}
 	if err := dbx.NamedSelect(ctx, repo.db, query, args, &items); err != nil {
@@ -141,6 +142,7 @@ func (repo *repositoryImpl) Count(ctx context.Context, f ListFilter) (int, error
 
 	args := map[string]any{}
 	query := "SELECT COUNT(a.id)" + athleteStatsFrom + athleteStatsConditions(f, args)
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	var count int
 	if err := dbx.NamedGet(ctx, repo.db, query, args, &count); err != nil {
@@ -157,6 +159,7 @@ func (repo *repositoryImpl) GetByID(ctx context.Context, id int64) (*dto.Athlete
 	defer scope.End()
 
 	query := athleteStatsSelect + " WHERE a.id = :id"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	var row dto.AthleteStatsRow
 
@@ -212,6 +215,8 @@ func (repo *repositoryImpl) upsert(ctx context.Context, p dbx.NamedPreparer, m m
 		"stats":           dbx.JSONOrDefault(m.Stats, "{}"),
 		"raw_data":        dbx.JSONOrDefault(m.RawData, "{}"),
 	}
+
+	scope.SetAttribute(constant.OtelQueryAttributeKey, athleteStatsUpsertSQL)
 
 	var inserted bool
 	if err := dbx.NamedGetP(ctx, p, athleteStatsUpsertSQL, args, &inserted); err != nil {

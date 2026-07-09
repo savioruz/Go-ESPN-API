@@ -116,6 +116,7 @@ func (repo *repositoryImpl) List(ctx context.Context, f ListFilter, page, pageSi
 	args := map[string]any{"limit": pageSize, "offset": (page - 1) * pageSize}
 	order := drf.ResolveOrdering(f.Ordering, injuryOrdering, "i.updated_at DESC")
 	query := injurySelect + injuryConditions(f, args) + " ORDER BY " + order + " LIMIT :limit OFFSET :offset"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	items := []dto.InjuryRow{}
 	if err := dbx.NamedSelect(ctx, repo.db, query, args, &items); err != nil {
@@ -133,6 +134,7 @@ func (repo *repositoryImpl) Count(ctx context.Context, f ListFilter) (int, error
 
 	args := map[string]any{}
 	query := "SELECT COUNT(i.id)" + injuryFrom + injuryConditions(f, args)
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	var count int
 	if err := dbx.NamedGet(ctx, repo.db, query, args, &count); err != nil {
@@ -149,6 +151,7 @@ func (repo *repositoryImpl) GetByID(ctx context.Context, id int64) (*dto.InjuryR
 	defer scope.End()
 
 	query := injurySelect + " WHERE i.id = :id"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	var row dto.InjuryRow
 
@@ -189,6 +192,8 @@ func (repo *repositoryImpl) deleteByLeague(ctx context.Context, p dbx.NamedPrepa
 	ctx, scope := repo.otel.NewScope(ctx, constant.OtelRepositoryScopeName, constant.OtelRepositoryScopeName+".injury.DeleteByLeague")
 	defer scope.End()
 
+	scope.SetAttribute(constant.OtelQueryAttributeKey, injuryDeleteSQL)
+
 	if err := dbx.NamedExecP(ctx, p, injuryDeleteSQL, map[string]any{"league_id": leagueID}); err != nil {
 		scope.TraceError(err)
 
@@ -225,6 +230,8 @@ func (repo *repositoryImpl) insert(ctx context.Context, p dbx.NamedPreparer, m m
 		"injury_type":     m.InjuryType,
 		"raw_data":        dbx.JSONOrDefault(m.RawData, "{}"),
 	}
+
+	scope.SetAttribute(constant.OtelQueryAttributeKey, injuryInsertSQL)
 
 	if err := dbx.NamedExecP(ctx, p, injuryInsertSQL, args); err != nil {
 		scope.TraceError(err)

@@ -75,6 +75,7 @@ func (repo *repositoryImpl) List(ctx context.Context, f ListFilter, page, pageSi
 	args := map[string]any{"limit": pageSize, "offset": (page - 1) * pageSize}
 	order := drf.ResolveOrdering(f.Ordering, skaterOrdering, "season DESC, points DESC")
 	query := skaterSelect + skaterConditions(f, args) + " ORDER BY " + order + ", id LIMIT :limit OFFSET :offset"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	items := []dto.SkaterStatsRow{}
 	if err := dbx.NamedSelect(ctx, repo.db, query, args, &items); err != nil {
@@ -92,6 +93,7 @@ func (repo *repositoryImpl) Count(ctx context.Context, f ListFilter) (int, error
 
 	args := map[string]any{}
 	query := "SELECT COUNT(id) FROM nhl_skater_season_stats" + skaterConditions(f, args)
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	var count int
 	if err := dbx.NamedGet(ctx, repo.db, query, args, &count); err != nil {
@@ -107,9 +109,12 @@ func (repo *repositoryImpl) GetByID(ctx context.Context, id int64) (*dto.SkaterS
 	ctx, scope := repo.otel.NewScope(ctx, constant.OtelRepositoryScopeName, constant.OtelRepositoryScopeName+".nhl_skater_stats.GetByID")
 	defer scope.End()
 
+	query := skaterSelect + " WHERE id = :id"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
+
 	var row dto.SkaterStatsRow
 
-	err := dbx.NamedGet(ctx, repo.db, skaterSelect+" WHERE id = :id", map[string]any{"id": id}, &row)
+	err := dbx.NamedGet(ctx, repo.db, query, map[string]any{"id": id}, &row)
 	if errors.Is(err, sql.ErrNoRows) {
 		//nolint:nilnil // (nil, nil) signals not-found; callers check for a nil result
 		return nil, nil
@@ -137,6 +142,8 @@ func (repo *repositoryImpl) PlayersByIDs(ctx context.Context, ids []int64) (map[
 	players := []playerdto.PlayerRow{}
 
 	pQuery := "SELECT " + playerdto.PlayerColumns + " FROM nhl_players WHERE id = ANY(:ids)"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, pQuery)
+
 	if err := dbx.NamedSelect(ctx, repo.db, pQuery, map[string]any{"ids": pq.Int64Array(ids)}, &players); err != nil {
 		scope.TraceError(err)
 
@@ -151,6 +158,8 @@ func (repo *repositoryImpl) PlayersByIDs(ctx context.Context, ids []int64) (map[
 		teams := []teamdto.TeamRow{}
 
 		tQuery := "SELECT " + teamdto.TeamColumns + " FROM nhl_teams WHERE id = ANY(:ids)"
+		scope.SetAttribute(constant.OtelQueryAttributeKey, tQuery)
+
 		if err := dbx.NamedSelect(ctx, repo.db, tQuery, map[string]any{"ids": pq.Int64Array(teamIDs)}, &teams); err != nil {
 			scope.TraceError(err)
 

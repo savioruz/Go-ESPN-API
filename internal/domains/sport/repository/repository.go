@@ -47,6 +47,8 @@ func (repo *repositoryImpl) List(ctx context.Context, page, pageSize int) ([]mod
 	)
 	args := map[string]any{"limit": pageSize, "offset": (page - 1) * pageSize}
 
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
+
 	items := []model.Sport{}
 	if err := dbx.NamedSelect(ctx, repo.db, query, args, &items); err != nil {
 		scope.TraceError(err)
@@ -61,8 +63,11 @@ func (repo *repositoryImpl) Count(ctx context.Context) (int, error) {
 	ctx, scope := repo.otel.NewScope(ctx, constant.OtelRepositoryScopeName, constant.OtelRepositoryScopeName+".sport.Count")
 	defer scope.End()
 
+	const query = "SELECT COUNT(id) FROM sports"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
+
 	var count int
-	if err := dbx.NamedGet(ctx, repo.db, "SELECT COUNT(id) FROM sports", map[string]any{}, &count); err != nil {
+	if err := dbx.NamedGet(ctx, repo.db, query, map[string]any{}, &count); err != nil {
 		scope.TraceError(err)
 
 		return 0, err
@@ -92,6 +97,8 @@ func (repo *repositoryImpl) getOrCreate(ctx context.Context, p dbx.NamedPreparer
 	ctx, scope := repo.otel.NewScope(ctx, constant.OtelRepositoryScopeName, constant.OtelRepositoryScopeName+".sport.GetOrCreate")
 	defer scope.End()
 
+	scope.SetAttribute(constant.OtelQueryAttributeKey, getOrCreateSQL)
+
 	var id int64
 	if err := dbx.NamedGetP(ctx, p, getOrCreateSQL, map[string]any{"slug": slug, "name": name}, &id); err != nil {
 		scope.TraceError(err)
@@ -107,6 +114,7 @@ func (repo *repositoryImpl) GetBySlug(ctx context.Context, slug string) (*model.
 	defer scope.End()
 
 	query := fmt.Sprintf("SELECT %s FROM sports WHERE slug = :slug", sportColumns)
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	var m model.Sport
 

@@ -74,6 +74,7 @@ func (repo *repositoryImpl) List(ctx context.Context, f ListFilter, page, pageSi
 	args := map[string]any{"limit": pageSize, "offset": (page - 1) * pageSize}
 	order := drf.ResolveOrdering(f.Ordering, playerOrdering, "last_name ASC, first_name ASC")
 	query := playerSelect + playerConditions(f, args) + " ORDER BY " + order + ", id LIMIT :limit OFFSET :offset"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	items := []dto.PlayerRow{}
 	if err := dbx.NamedSelect(ctx, repo.db, query, args, &items); err != nil {
@@ -91,6 +92,7 @@ func (repo *repositoryImpl) Count(ctx context.Context, f ListFilter) (int, error
 
 	args := map[string]any{}
 	query := "SELECT COUNT(id) FROM nhl_players" + playerConditions(f, args)
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	var count int
 	if err := dbx.NamedGet(ctx, repo.db, query, args, &count); err != nil {
@@ -106,9 +108,12 @@ func (repo *repositoryImpl) GetByID(ctx context.Context, id int64) (*dto.PlayerR
 	ctx, scope := repo.otel.NewScope(ctx, constant.OtelRepositoryScopeName, constant.OtelRepositoryScopeName+".nhl_player.GetByID")
 	defer scope.End()
 
+	query := playerSelect + " WHERE is_active = TRUE AND id = :id"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
+
 	var row dto.PlayerRow
 
-	err := dbx.NamedGet(ctx, repo.db, playerSelect+" WHERE is_active = TRUE AND id = :id", map[string]any{"id": id}, &row)
+	err := dbx.NamedGet(ctx, repo.db, query, map[string]any{"id": id}, &row)
 	if errors.Is(err, sql.ErrNoRows) {
 		//nolint:nilnil // (nil, nil) signals not-found; callers check for a nil result
 		return nil, nil
@@ -135,6 +140,8 @@ func (repo *repositoryImpl) TeamsByIDs(ctx context.Context, ids []int64) (map[in
 	rows := []teamdto.TeamRow{}
 
 	query := "SELECT " + teamdto.TeamColumns + " FROM nhl_teams WHERE id = ANY(:ids)"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
+
 	if err := dbx.NamedSelect(ctx, repo.db, query, map[string]any{"ids": pq.Int64Array(ids)}, &rows); err != nil {
 		scope.TraceError(err)
 
@@ -179,6 +186,8 @@ func (repo *repositoryImpl) UpsertTx(ctx context.Context, tx *sqlx.Tx, m model.N
 		"headshot_url":    m.HeadshotURL,
 		"raw_data":        dbx.JSONOrDefault(m.RawData, "{}"),
 	}
+
+	scope.SetAttribute(constant.OtelQueryAttributeKey, playerUpsertSQL)
 
 	var inserted bool
 	if err := dbx.NamedGetP(ctx, tx, playerUpsertSQL, args, &inserted); err != nil {

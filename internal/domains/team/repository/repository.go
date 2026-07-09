@@ -141,6 +141,7 @@ func (repo *repositoryImpl) List(ctx context.Context, f ListFilter, page, pageSi
 	args := map[string]any{"limit": pageSize, "offset": (page - 1) * pageSize}
 	order := drf.ResolveOrdering(f.Ordering, teamOrdering, "t.display_name ASC")
 	query := teamListSelect + teamConditions(f, args) + " ORDER BY " + order + ", t.id LIMIT :limit OFFSET :offset"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	items := []dto.TeamListRow{}
 	if err := dbx.NamedSelect(ctx, repo.db, query, args, &items); err != nil {
@@ -160,6 +161,7 @@ func (repo *repositoryImpl) Count(ctx context.Context, f ListFilter) (int, error
 	query := `SELECT COUNT(t.id) FROM teams t
 		JOIN leagues l ON l.id = t.league_id
 		JOIN sports s ON s.id = l.sport_id` + teamConditions(f, args)
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	var count int
 	if err := dbx.NamedGet(ctx, repo.db, query, args, &count); err != nil {
@@ -191,7 +193,10 @@ func (repo *repositoryImpl) GetByID(ctx context.Context, id int64) (*dto.TeamDet
 	ctx, scope := repo.otel.NewScope(ctx, constant.OtelRepositoryScopeName, constant.OtelRepositoryScopeName+".team.GetByID")
 	defer scope.End()
 
-	row, err := repo.getDetail(ctx, " WHERE t.is_active = TRUE AND t.id = :id", map[string]any{"id": id})
+	const clause = " WHERE t.is_active = TRUE AND t.id = :id"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, teamDetailSelect+clause)
+
+	row, err := repo.getDetail(ctx, clause, map[string]any{"id": id})
 	if err != nil {
 		scope.TraceError(err)
 	}
@@ -203,7 +208,10 @@ func (repo *repositoryImpl) GetByESPNID(ctx context.Context, espnID string) (*dt
 	ctx, scope := repo.otel.NewScope(ctx, constant.OtelRepositoryScopeName, constant.OtelRepositoryScopeName+".team.GetByESPNID")
 	defer scope.End()
 
-	row, err := repo.getDetail(ctx, " WHERE t.is_active = TRUE AND t.espn_id = :espn_id ORDER BY t.display_name LIMIT 1", map[string]any{"espn_id": espnID})
+	const clause = " WHERE t.is_active = TRUE AND t.espn_id = :espn_id ORDER BY t.display_name LIMIT 1"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, teamDetailSelect+clause)
+
+	row, err := repo.getDetail(ctx, clause, map[string]any{"espn_id": espnID})
 	if err != nil {
 		scope.TraceError(err)
 	}
@@ -271,6 +279,8 @@ func (repo *repositoryImpl) upsert(ctx context.Context, p dbx.NamedPreparer, m m
 		"raw_data":           dbx.JSONOrDefault(m.RawData, "{}"),
 	}
 
+	scope.SetAttribute(constant.OtelQueryAttributeKey, teamUpsertSQL)
+
 	var inserted bool
 	if err := dbx.NamedGetP(ctx, p, teamUpsertSQL, args, &inserted); err != nil {
 		scope.TraceError(err)
@@ -317,6 +327,8 @@ func (repo *repositoryImpl) getOrCreateMinimal(ctx context.Context, p dbx.NamedP
 		"logos":              dbx.JSONOrDefault(m.Logos, "[]"),
 	}
 
+	scope.SetAttribute(constant.OtelQueryAttributeKey, teamMinimalSQL)
+
 	var id int64
 	if err := dbx.NamedGetP(ctx, p, teamMinimalSQL, args, &id); err != nil {
 		scope.TraceError(err)
@@ -338,6 +350,8 @@ func (repo *repositoryImpl) IDByESPNInLeagueTx(ctx context.Context, tx *sqlx.Tx,
 		//nolint:nilnil // (nil, nil) signals not-found; callers check for a nil result
 		return nil, nil
 	}
+
+	scope.SetAttribute(constant.OtelQueryAttributeKey, teamIDByESPNSQL)
 
 	var id int64
 

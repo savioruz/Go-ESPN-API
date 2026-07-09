@@ -53,6 +53,8 @@ func (repo *repositoryImpl) getRef(ctx context.Context, p dbx.NamedPreparer, esp
 	ctx, scope := repo.otel.NewScope(ctx, constant.OtelRepositoryScopeName, constant.OtelRepositoryScopeName+".athlete.GetRefByESPNID")
 	defer scope.End()
 
+	scope.SetAttribute(constant.OtelQueryAttributeKey, athleteRefSQL)
+
 	var ref Ref
 
 	err := dbx.NamedGetP(ctx, p, athleteRefSQL, map[string]any{"espn_id": espnID}, &ref)

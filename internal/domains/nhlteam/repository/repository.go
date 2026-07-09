@@ -81,6 +81,7 @@ func (repo *repositoryImpl) List(ctx context.Context, f ListFilter, page, pageSi
 	args := map[string]any{"limit": pageSize, "offset": (page - 1) * pageSize}
 	order := drf.ResolveOrdering(f.Ordering, teamOrdering, "name ASC")
 	query := teamSelect + teamConditions(f, args) + " ORDER BY " + order + ", id LIMIT :limit OFFSET :offset"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	items := []dto.TeamRow{}
 	if err := dbx.NamedSelect(ctx, repo.db, query, args, &items); err != nil {
@@ -98,6 +99,7 @@ func (repo *repositoryImpl) Count(ctx context.Context, f ListFilter) (int, error
 
 	args := map[string]any{}
 	query := "SELECT COUNT(id) FROM nhl_teams" + teamConditions(f, args)
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	var count int
 	if err := dbx.NamedGet(ctx, repo.db, query, args, &count); err != nil {
@@ -113,9 +115,12 @@ func (repo *repositoryImpl) GetByID(ctx context.Context, id int64) (*dto.TeamRow
 	ctx, scope := repo.otel.NewScope(ctx, constant.OtelRepositoryScopeName, constant.OtelRepositoryScopeName+".nhl_team.GetByID")
 	defer scope.End()
 
+	query := teamSelect + " WHERE is_active = TRUE AND id = :id"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
+
 	var row dto.TeamRow
 
-	err := dbx.NamedGet(ctx, repo.db, teamSelect+" WHERE is_active = TRUE AND id = :id", map[string]any{"id": id}, &row)
+	err := dbx.NamedGet(ctx, repo.db, query, map[string]any{"id": id}, &row)
 	if errors.Is(err, sql.ErrNoRows) {
 		//nolint:nilnil // (nil, nil) signals not-found; callers check for a nil result
 		return nil, nil
@@ -142,6 +147,8 @@ func (repo *repositoryImpl) ListActive(ctx context.Context) ([]model.NHLTeam, er
 	ctx, scope := repo.otel.NewScope(ctx, constant.OtelRepositoryScopeName, constant.OtelRepositoryScopeName+".nhl_team.ListActive")
 	defer scope.End()
 
+	scope.SetAttribute(constant.OtelQueryAttributeKey, teamListActiveSQL)
+
 	items := []model.NHLTeam{}
 	if err := dbx.NamedSelect(ctx, repo.db, teamListActiveSQL, map[string]any{}, &items); err != nil {
 		scope.TraceError(err)
@@ -157,7 +164,10 @@ func (repo *repositoryImpl) DeactivateAllTx(ctx context.Context, tx *sqlx.Tx) er
 	ctx, scope := repo.otel.NewScope(ctx, constant.OtelRepositoryScopeName, constant.OtelRepositoryScopeName+".nhl_team.DeactivateAll")
 	defer scope.End()
 
-	if err := dbx.NamedExecP(ctx, tx, "UPDATE nhl_teams SET is_active = FALSE, updated_at = NOW()", map[string]any{}); err != nil {
+	const query = "UPDATE nhl_teams SET is_active = FALSE, updated_at = NOW()"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
+
+	if err := dbx.NamedExecP(ctx, tx, query, map[string]any{}); err != nil {
 		scope.TraceError(err)
 
 		return err
@@ -196,6 +206,8 @@ func (repo *repositoryImpl) UpsertTx(ctx context.Context, tx *sqlx.Tx, m model.N
 		"raw_data":     dbx.JSONOrDefault(m.RawData, "{}"),
 	}
 
+	scope.SetAttribute(constant.OtelQueryAttributeKey, teamUpsertSQL)
+
 	var inserted bool
 	if err := dbx.NamedGetP(ctx, tx, teamUpsertSQL, args, &inserted); err != nil {
 		scope.TraceError(err)
@@ -217,6 +229,8 @@ func (repo *repositoryImpl) IDByAbbrevTx(ctx context.Context, tx *sqlx.Tx, abbre
 		//nolint:nilnil // (nil, nil) signals not-found; callers check for a nil result
 		return nil, nil
 	}
+
+	scope.SetAttribute(constant.OtelQueryAttributeKey, teamIDByAbbrevSQL)
 
 	var id int64
 

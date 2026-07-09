@@ -200,6 +200,7 @@ func (repo *repositoryImpl) List(ctx context.Context, f ListFilter, page, pageSi
 	args := map[string]any{"limit": pageSize, "offset": (page - 1) * pageSize}
 	order := drf.ResolveOrdering(f.Ordering, eventOrdering, "e.date DESC")
 	query := eventListSelect + eventConditions(f, args) + " ORDER BY " + order + ", e.id LIMIT :limit OFFSET :offset"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	items := []dto.EventListRow{}
 	if err := dbx.NamedSelect(ctx, repo.db, query, args, &items); err != nil {
@@ -220,6 +221,7 @@ func (repo *repositoryImpl) Count(ctx context.Context, f ListFilter) (int, error
 		JOIN leagues l ON l.id = e.league_id
 		JOIN sports s ON s.id = l.sport_id
 		LEFT JOIN venues v ON v.id = e.venue_id` + eventConditions(f, args)
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	var count int
 	if err := dbx.NamedGet(ctx, repo.db, query, args, &count); err != nil {
@@ -251,7 +253,10 @@ func (repo *repositoryImpl) GetByID(ctx context.Context, id int64) (*dto.EventDe
 	ctx, scope := repo.otel.NewScope(ctx, constant.OtelRepositoryScopeName, constant.OtelRepositoryScopeName+".event.GetByID")
 	defer scope.End()
 
-	row, err := repo.getDetail(ctx, " WHERE e.id = :id", map[string]any{"id": id})
+	const clause = " WHERE e.id = :id"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, eventDetailSelect+clause)
+
+	row, err := repo.getDetail(ctx, clause, map[string]any{"id": id})
 	if err != nil {
 		scope.TraceError(err)
 	}
@@ -263,7 +268,10 @@ func (repo *repositoryImpl) GetByESPNID(ctx context.Context, espnID string) (*dt
 	ctx, scope := repo.otel.NewScope(ctx, constant.OtelRepositoryScopeName, constant.OtelRepositoryScopeName+".event.GetByESPNID")
 	defer scope.End()
 
-	row, err := repo.getDetail(ctx, " WHERE e.espn_id = :espn_id ORDER BY e.date DESC LIMIT 1", map[string]any{"espn_id": espnID})
+	const clause = " WHERE e.espn_id = :espn_id ORDER BY e.date DESC LIMIT 1"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, eventDetailSelect+clause)
+
+	row, err := repo.getDetail(ctx, clause, map[string]any{"espn_id": espnID})
 	if err != nil {
 		scope.TraceError(err)
 	}
@@ -282,6 +290,8 @@ func (repo *repositoryImpl) CompetitorsByEventIDs(ctx context.Context, ids []int
 	if len(ids) == 0 {
 		return rows, nil
 	}
+
+	scope.SetAttribute(constant.OtelQueryAttributeKey, competitorsSelect)
 
 	args := map[string]any{"ids": pq.Array(ids)}
 	if err := dbx.NamedSelect(ctx, repo.db, competitorsSelect, args, &rows); err != nil {
@@ -312,6 +322,8 @@ const stuckEventsSQL = `
 func (repo *repositoryImpl) StuckEvents(ctx context.Context, lookbackDays, limit int) ([]StuckEventRef, error) {
 	ctx, scope := repo.otel.NewScope(ctx, constant.OtelRepositoryScopeName, constant.OtelRepositoryScopeName+".event.StuckEvents")
 	defer scope.End()
+
+	scope.SetAttribute(constant.OtelQueryAttributeKey, stuckEventsSQL)
 
 	args := map[string]any{"lookback_days": lookbackDays, "limit": limit}
 
@@ -388,6 +400,8 @@ func (repo *repositoryImpl) upsert(ctx context.Context, p dbx.NamedPreparer, m m
 		"links":         dbx.JSONOrDefault(m.Links, "[]"),
 		"raw_data":      dbx.JSONOrDefault(m.RawData, "{}"),
 	}
+
+	scope.SetAttribute(constant.OtelQueryAttributeKey, eventUpsertSQL)
 
 	var res UpsertResult
 	if err := dbx.NamedGetP(ctx, p, eventUpsertSQL, args, &res); err != nil {

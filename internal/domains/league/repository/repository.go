@@ -58,6 +58,7 @@ func (repo *repositoryImpl) List(ctx context.Context, sport string, page, pageSi
 	args := map[string]any{"limit": pageSize, "offset": (page - 1) * pageSize}
 	query := leagueSelect + leagueWhere(sport, args) +
 		" ORDER BY s.name ASC, l.name ASC LIMIT :limit OFFSET :offset"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	items := []dto.LeagueRow{}
 	if err := dbx.NamedSelect(ctx, repo.db, query, args, &items); err != nil {
@@ -75,6 +76,7 @@ func (repo *repositoryImpl) Count(ctx context.Context, sport string) (int, error
 
 	args := map[string]any{}
 	query := "SELECT COUNT(l.id) FROM leagues l JOIN sports s ON s.id = l.sport_id" + leagueWhere(sport, args)
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	var count int
 	if err := dbx.NamedGet(ctx, repo.db, query, args, &count); err != nil {
@@ -110,6 +112,8 @@ func (repo *repositoryImpl) getOrCreate(ctx context.Context, p dbx.NamedPreparer
 
 	args := map[string]any{"sport_id": sportID, "slug": slug, "name": name, "abbreviation": abbreviation}
 
+	scope.SetAttribute(constant.OtelQueryAttributeKey, leagueGetOrCreateSQL)
+
 	var id int64
 	if err := dbx.NamedGetP(ctx, p, leagueGetOrCreateSQL, args, &id); err != nil {
 		scope.TraceError(err)
@@ -125,6 +129,7 @@ func (repo *repositoryImpl) GetByID(ctx context.Context, id int64) (*dto.LeagueR
 	defer scope.End()
 
 	query := leagueSelect + " WHERE l.id = :id"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	var row dto.LeagueRow
 

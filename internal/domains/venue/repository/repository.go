@@ -69,6 +69,8 @@ func (repo *repositoryImpl) upsert(ctx context.Context, p dbx.NamedPreparer, m m
 		"raw_data":  dbx.JSONOrDefault(m.RawData, "{}"),
 	}
 
+	scope.SetAttribute(constant.OtelQueryAttributeKey, venueUpsertSQL)
+
 	var id int64
 	if err := dbx.NamedGetP(ctx, p, venueUpsertSQL, args, &id); err != nil {
 		scope.TraceError(err)

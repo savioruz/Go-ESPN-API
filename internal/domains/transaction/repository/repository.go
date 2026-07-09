@@ -108,6 +108,7 @@ func (repo *repositoryImpl) List(ctx context.Context, f ListFilter, page, pageSi
 	args := map[string]any{"limit": pageSize, "offset": (page - 1) * pageSize}
 	order := drf.ResolveOrdering(f.Ordering, transactionOrdering, "tr.date DESC")
 	query := transactionSelect + transactionConditions(f, args) + " ORDER BY " + order + " LIMIT :limit OFFSET :offset"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	items := []dto.TransactionRow{}
 	if err := dbx.NamedSelect(ctx, repo.db, query, args, &items); err != nil {
@@ -125,6 +126,7 @@ func (repo *repositoryImpl) Count(ctx context.Context, f ListFilter) (int, error
 
 	args := map[string]any{}
 	query := "SELECT COUNT(tr.id)" + transactionFrom + transactionConditions(f, args)
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	var count int
 	if err := dbx.NamedGet(ctx, repo.db, query, args, &count); err != nil {
@@ -141,6 +143,7 @@ func (repo *repositoryImpl) GetByID(ctx context.Context, id int64) (*dto.Transac
 	defer scope.End()
 
 	query := transactionSelect + " WHERE tr.id = :id"
+	scope.SetAttribute(constant.OtelQueryAttributeKey, query)
 
 	var row dto.TransactionRow
 
@@ -198,6 +201,8 @@ func (repo *repositoryImpl) UpsertByESPNTx(ctx context.Context, tx *sqlx.Tx, m m
 	ctx, scope := repo.otel.NewScope(ctx, constant.OtelRepositoryScopeName, constant.OtelRepositoryScopeName+".transaction.UpsertByESPN")
 	defer scope.End()
 
+	scope.SetAttribute(constant.OtelQueryAttributeKey, transactionFindSQL)
+
 	var id int64
 
 	err := dbx.NamedGetP(ctx, tx, transactionFindSQL,
@@ -205,6 +210,8 @@ func (repo *repositoryImpl) UpsertByESPNTx(ctx context.Context, tx *sqlx.Tx, m m
 
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
+		scope.SetAttribute(constant.OtelQueryAttributeKey, transactionInsertSQL)
+
 		if ierr := dbx.NamedExecP(ctx, tx, transactionInsertSQL, transactionArgs(m)); ierr != nil {
 			scope.TraceError(ierr)
 
@@ -220,6 +227,9 @@ func (repo *repositoryImpl) UpsertByESPNTx(ctx context.Context, tx *sqlx.Tx, m m
 		args := transactionArgs(m)
 
 		args["id"] = id
+
+		scope.SetAttribute(constant.OtelQueryAttributeKey, transactionUpdateSQL)
+
 		if uerr := dbx.NamedExecP(ctx, tx, transactionUpdateSQL, args); uerr != nil {
 			scope.TraceError(uerr)
 
@@ -234,6 +244,8 @@ func (repo *repositoryImpl) UpsertByESPNTx(ctx context.Context, tx *sqlx.Tx, m m
 func (repo *repositoryImpl) InsertTx(ctx context.Context, tx *sqlx.Tx, m model.Transaction) error {
 	ctx, scope := repo.otel.NewScope(ctx, constant.OtelRepositoryScopeName, constant.OtelRepositoryScopeName+".transaction.Insert")
 	defer scope.End()
+
+	scope.SetAttribute(constant.OtelQueryAttributeKey, transactionInsertSQL)
 
 	if err := dbx.NamedExecP(ctx, tx, transactionInsertSQL, transactionArgs(m)); err != nil {
 		scope.TraceError(err)
